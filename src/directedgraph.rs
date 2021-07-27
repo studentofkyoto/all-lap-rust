@@ -1,7 +1,6 @@
 use crate::contains::Contains;
 use std::collections::HashSet;
 use std::fmt;
-use std::iter::repeat;
 
 pub struct DirectedGraph {
     pub adj: Vec<Vec<usize>>,

@@ -119,14 +119,6 @@ impl Matching {
         Matching::new(l2r)
     }
 
-    // pub fn from_edges(edges: Vec<Edge>, lsize: usize) -> Matching {
-    //     let mut l2r = repeat(None).take(lsize).collect::<Vec<_>>();
-    //     for e in edges {
-    //         l2r[e.left] = Some(e.right);
-    //     }
-    //     Matching { l2r }
-    // }
-
     fn pop_by_node(&mut self, n: &Node) -> Option<Edge> {
         match n.lr {
             NodeGroup::Left => {
@@ -323,16 +315,13 @@ fn _enum_maximum_matchings_iter(
         }
         let edge = *maybe_edge.unwrap();
 
-        // Step 4
-        // already done because we are not really finding the optimal edge
+        // Step 4 . skip
 
-        // Step 5
-        // Construct new matching M' by flipping edges along the cycle, i.e. change the direction of all the edges in the circle
+        // Step 5 flip along cycle from given matching
         let new_matching = matching.flip(&cycle_edges);
         ret.push(new_matching.clone());
 
         // Step 6 G-(e)
-        // Recurse with the old matching M but without the edge e
         {
             let edges = graph.exclude_nodes(&edge);
             let mut digraph_minus = graph.as_directed(&matching);
@@ -348,7 +337,6 @@ fn _enum_maximum_matchings_iter(
         }
 
         // Step 7 G+(e)
-        // Recurse with the new matching M' but without the edge e
         {
             graph.pop(&edge);
 
@@ -365,9 +353,7 @@ fn _enum_maximum_matchings_iter(
             graph.push(edge);
         }
     } else {
-        // Step 8
-        // Find feasible path of length 2 in D(graph, matching)
-        // This path has the form left1 -> right -> left2
+        // Step 8. feasible path of length 2: left1 -> right -> left2
         let maybe_chain = digraph
             .adj
             .iter()
@@ -387,9 +373,7 @@ fn _enum_maximum_matchings_iter(
                 return ret;
             }
             Some((left, right, left_free)) => {
-                // Construct M'
-                // Exchange the direction of the path left1 -> right -> left2
-                // to left1 <- right <- left2 in the new matching
+                // (left1 -> right -> left2) => (left2 -> right -> left1)
                 let mut new_match = matching.clone();
                 let edge = Edge {
                     left: left_free,
@@ -482,10 +466,16 @@ mod tests {
         assert_eq!(actual, expect);
     }
 
-    struct MyHashSet { inner: HashSet<Node>, lsize: usize }
+    struct MyHashSet {
+        inner: HashSet<Node>,
+        lsize: usize,
+    }
     impl MyHashSet {
-        fn from_nodes(nodes: impl Iterator<Item=Node>, lsize: usize) -> Self {
-            Self {inner: HashSet::from_iter(nodes), lsize}
+        fn from_nodes(nodes: impl Iterator<Item = Node>, lsize: usize) -> Self {
+            Self {
+                inner: HashSet::from_iter(nodes),
+                lsize,
+            }
         }
     }
     impl Contains<usize> for MyHashSet {
@@ -501,18 +491,17 @@ mod tests {
 
     #[test]
     fn test_no_loop() {
-        let adj = vec![
-            vec![0, 2],
-            vec![0, 1],
-            vec![2, 3],
-            vec![2, 3],
-        ];
-        let hashset = MyHashSet::from_nodes(vec![
-            Node::new(NodeGroup::Left, 0),
-            Node::new(NodeGroup::Left, 1),
-            Node::new(NodeGroup::Right, 0),
-            Node::new(NodeGroup::Right, 1),
-        ].into_iter(), 4);
+        let adj = vec![vec![0, 2], vec![0, 1], vec![2, 3], vec![2, 3]];
+        let hashset = MyHashSet::from_nodes(
+            vec![
+                Node::new(NodeGroup::Left, 0),
+                Node::new(NodeGroup::Left, 1),
+                Node::new(NodeGroup::Right, 0),
+                Node::new(NodeGroup::Right, 1),
+            ]
+            .into_iter(),
+            4,
+        );
 
         let mut graph = BipartiteGraph::from_adj(adj);
         let solutions = enum_maximum_matchings_iter(&mut graph, &hashset);
