@@ -1,0 +1,13 @@
+[package]
+name = "all-lap-rust"
+version = "0.1.0"
+authors = ["Jaeseung Han <thestudentofkyoto@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+itertools = "0.8.2"
+either = "1.6.1"
+hopcroft-karp-rust = { git = "https://github.com/studentofkyoto/hopcroft-karp-rust/", branch = "master" }
+rstest = "0.10.0"
