@@ -1,7 +1,7 @@
-use crate::types::Collection;
+use crate::contains::Contains;
 use std::collections::HashSet;
-use std::iter::repeat;
 use std::fmt;
+use std::iter::repeat;
 
 pub struct DirectedGraph {
     pub adj: Vec<Vec<usize>>,
@@ -11,7 +11,9 @@ impl fmt::Debug for DirectedGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "DirectedGraph {{")?;
         for (i, js) in self.adj.iter().enumerate() {
-            if js.is_empty() {continue}
+            if js.is_empty() {
+                continue;
+            }
             writeln!(f, "\t{:?} -> {:?}", i, js)?;
         }
         writeln!(f, "}}")?;
@@ -22,7 +24,7 @@ impl fmt::Debug for DirectedGraph {
 impl DirectedGraph {
     pub fn sort(&mut self) {
         for rs in self.adj.iter_mut() {
-            rs.sort()
+            rs.sort_unstable()
         }
     }
 
@@ -30,7 +32,7 @@ impl DirectedGraph {
         DirectedGraph { adj: i2js }
     }
 
-    pub fn find_cycle(&self, is_node_startable: &impl Collection<usize>) -> Vec<usize> {
+    pub fn find_cycle(&self, is_node_startable: &impl Contains<usize>) -> Vec<usize> {
         let mut visited = HashSet::new();
         for i in 0..self.adj.len() {
             if !is_node_startable.contains_node(&i) {
@@ -70,24 +72,15 @@ impl DirectedGraph {
         }
         None
     }
-
-    // Used by others
-    pub fn iter_edges(&'_ self) -> impl Iterator<Item = (usize, usize)> + '_ {
-        self.adj
-            .iter()
-            .enumerate()
-            .map(|(i, x)| repeat(i).zip(x.iter().copied()))
-            .flatten()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::DirectedGraph;
-    use crate::types::Collection;
+    use crate::contains::Contains;
 
     struct DummySet {}
-    impl Collection<usize> for DummySet {
+    impl Contains<usize> for DummySet {
         fn contains_node(&self, _: &usize) -> bool {
             true
         }
