@@ -5,7 +5,6 @@ use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt;
 use std::iter::repeat;
-
 type NodeIndex = usize;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
@@ -258,168 +257,247 @@ impl BipartiteGraph {
         }
         edges_popped
     }
-}
 
-pub fn enum_maximum_matchings_iter(
-    graph: &mut BipartiteGraph,
-    allowed_start_nodes: &(impl Contains<Node> + Contains<usize>),
-) -> Vec<Matching> {
-    let mut ret = vec![];
-    let matching = graph.find_matching();
-    ret.push(matching.clone());
-    let digraph = graph.as_directed(&matching);
-    ret.extend(_enum_maximum_matchings_iter(
-        graph,
-        &matching,
-        &digraph,
-        allowed_start_nodes,
-    ));
-    ret
-}
-
-fn _enum_maximum_matchings_iter(
-    graph: &mut BipartiteGraph,
-    matching: &Matching,
-    digraph: &DirectedGraph,
-    allowed_start_nodes: &(impl Contains<Node> + Contains<usize>),
-) -> Vec<Matching> {
-    let mut ret = vec![];
-    // Step 1
-    if graph.is_empty() {
-        return ret;
+    pub fn iter_match<'a, 'b: 'a>(
+        &'a mut self,
+        allowed_start_nodes: &'b (impl Contains<Node> + Contains<usize>),
+    ) -> impl Iterator<Item = Matching> + 'a {
+        MaximumMatchingsIterator::from_graph(self, allowed_start_nodes)
     }
-    // Step 2
-    let _cycle = digraph.find_cycle(allowed_start_nodes);
-    let lsize = graph.adj.len();
-    if !_cycle.is_empty() {
-        // Step 3
-        let cycle: Vec<_> = _cycle
-            .into_iter()
-            .map(|idx| Node::decode(&idx, &lsize))
-            .collect();
-        let cycle_edges: Vec<_> = cycle
-            .iter()
-            .chunks(2)
-            .into_iter()
-            .map(|c| {
-                let items: Vec<_> = c.collect();
-                Edge::new(items[0].idx, items[1].idx)
-            })
-            .collect();
-        let maybe_edge = cycle_edges.iter().find(|e| {
-            allowed_start_nodes.contains_node(&Node::new(NodeGroup::Left, e.left))
-                && allowed_start_nodes.contains_node(&Node::new(NodeGroup::Right, e.right))
-        });
-        if maybe_edge.is_none() {
-            return ret;
+}
+
+struct MaximumMatchingsIterator<'a, T> {
+    graph: &'a mut BipartiteGraph,
+    allowed_start_nodes: &'a T,
+    callstack: Vec<Call>,
+    is_first_returned: bool, // TODO: remove this thing
+}
+
+impl<'a, T> MaximumMatchingsIterator<'a, T> {
+    fn new(
+        graph: &'a mut BipartiteGraph,
+        matching: Matching,
+        digraph: DirectedGraph,
+        allowed_start_nodes: &'a T,
+    ) -> Self {
+        let callstack = vec![Call::New(matching, digraph)];
+        Self {
+            graph,
+            allowed_start_nodes,
+            callstack,
+            is_first_returned: false,
         }
-        let edge = *maybe_edge.unwrap();
+    }
 
-        // Step 4 . skip
+    fn from_graph(graph: &'a mut BipartiteGraph, allowed_start_nodes: &'a T) -> Self {
+        let matching = graph.find_matching();
+        let digraph = graph.as_directed(&matching);
+        Self::new(graph, matching, digraph, allowed_start_nodes)
+    }
+}
 
-        // Step 5 flip along cycle from given matching
-        let new_matching = matching.flip(&cycle_edges);
-        ret.push(new_matching.clone());
+impl<'a, T> Iterator for MaximumMatchingsIterator<'a, T>
+where
+    T: Contains<Node> + Contains<usize>,
+{
+    type Item = Matching;
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(call) = self.callstack.pop() {
+            if !self.is_first_returned {
+                match call {
+                    Call::New(m, d) => {
+                        self.is_first_returned = true;
+                        self.callstack.push(Call::New(m.clone(), d));
+                        return Some(m);
+                    }
+                    _ => {
+                        panic!("??")
+                    }
+                }
+            }
+            let ret = run(&mut self.graph, self.allowed_start_nodes, call);
+            if ret.is_none() {
+                continue;
+            }
+            let (response, ctxt) = ret.unwrap();
+            self.callstack.push(ctxt);
 
-        // Step 6 G-(e)
-        {
+            match response {
+                Response::YieldFrom(m, d) => self.callstack.push(Call::New(m, d)),
+                Response::Return(m) => {
+                    return Some(m);
+                }
+            }
+        }
+        None
+    }
+}
+
+fn run<T>(
+    graph: &mut BipartiteGraph,
+    allowed_start_nodes: &T,
+    call: Call,
+) -> Option<(Response, Call)>
+where
+    T: Contains<Node> + Contains<usize>,
+{
+    match call {
+        Call::New(matching, digraph) => {
+            // Step 1
+            if graph.is_empty() {
+                return None;
+            }
+            // Step 2
+            let _cycle = digraph.find_cycle(allowed_start_nodes);
+            let lsize = graph.adj.len();
+            if !_cycle.is_empty() {
+                // Step 3
+                let cycle: Vec<_> = _cycle
+                    .into_iter()
+                    .map(|idx| Node::decode(&idx, &lsize))
+                    .collect();
+                let cycle_edges: Vec<_> = cycle
+                    .iter()
+                    .chunks(2)
+                    .into_iter()
+                    .map(|c| {
+                        let items: Vec<_> = c.collect();
+                        Edge::new(items[0].idx, items[1].idx)
+                    })
+                    .collect();
+                let edge = cycle_edges
+                    .iter()
+                    .find(|e| {
+                        allowed_start_nodes.contains_node(&Node::new(NodeGroup::Left, e.left))
+                            && allowed_start_nodes
+                                .contains_node(&Node::new(NodeGroup::Right, e.right))
+                    })?
+                    .to_owned();
+
+                // Step 4 . skip
+
+                // Step 5 flip along cycle from given matching
+                let new_matching = matching.flip(&cycle_edges);
+                Some((
+                    Response::Return(new_matching.clone()),
+                    Call::AfterStep5(new_matching, matching, edge),
+                ))
+            } else {
+                // Step 8. feasible path of length 2: left1 -> right -> left2
+                let maybe_chain = digraph
+                    .adj
+                    .iter()
+                    .enumerate()
+                    .filter(move |(i, rs)| i < &lsize && !rs.is_empty())
+                    .filter_map(|(i, _)| matching.find_edge_of_left(i))
+                    .flat_map(|e| {
+                        digraph.adj[e.right + lsize]
+                            .iter()
+                            .zip(repeat(Node::decode(&e.left, &lsize)))
+                            .zip(repeat(Node::decode(&e.right, &lsize)))
+                    })
+                    .find(|((l2, _), _)| matching.find_edge_of_left(**l2).is_none())
+                    .map(|((l2, l1), r)| (l1, r, *l2));
+                match maybe_chain {
+                    None => None,
+                    Some((left, right, left_free)) => {
+                        // (left1 -> right -> left2) => (left2 -> right -> left1)
+                        let mut new_match = matching.clone();
+                        let edge = Edge {
+                            left: left_free,
+                            right: right.idx,
+                        };
+                        new_match.pop_by_node(&left);
+                        new_match.push(edge);
+                        Some((
+                            Response::Return(new_match.clone()),
+                            Call::AfterStep8(new_match, matching, edge),
+                        ))
+                    }
+                }
+            }
+        }
+        Call::AfterStep5(new_matching, matching, edge) => {
+            // Step 6 G-(e)
             let edges = graph.exclude_nodes(&edge);
             let mut digraph_minus = graph.as_directed(&matching);
             graph.sort();
             digraph_minus.sort();
-            let _ret =
-                _enum_maximum_matchings_iter(graph, matching, &digraph_minus, allowed_start_nodes);
-            ret.extend(_ret);
-
+            Some((
+                Response::YieldFrom(matching, digraph_minus),
+                Call::AfterStep6(new_matching, edge, edges),
+            ))
+        }
+        Call::AfterStep6(new_matching, edge, edges) => {
+            // Wrap up previous step
             for e in edges {
                 graph.push(e);
             }
-        }
 
-        // Step 7 G+(e)
-        {
+            // Step 7 G+(e)
             graph.pop(&edge);
 
             let mut digraph_plus = graph.as_directed(&new_matching);
             graph.sort();
             digraph_plus.sort();
-            let _ret = _enum_maximum_matchings_iter(
-                graph,
-                &new_matching,
-                &digraph_plus,
-                allowed_start_nodes,
-            );
-            ret.extend(_ret);
-            graph.push(edge);
+            Some((
+                Response::YieldFrom(new_matching, digraph_plus),
+                Call::AfterStep7(edge),
+            ))
         }
-    } else {
-        // Step 8. feasible path of length 2: left1 -> right -> left2
-        let maybe_chain = digraph
-            .adj
-            .iter()
-            .enumerate()
-            .filter(move |(i, rs)| i < &lsize && !rs.is_empty())
-            .filter_map(|(i, _)| matching.find_edge_of_left(i))
-            .flat_map(|e| {
-                digraph.adj[e.right + lsize]
-                    .iter()
-                    .zip(repeat(Node::decode(&e.left, &lsize)))
-                    .zip(repeat(Node::decode(&e.right, &lsize)))
-            })
-            .find(|((l2, _), _)| matching.find_edge_of_left(**l2).is_none())
-            .map(|((l2, l1), r)| (l1, r, *l2));
-        match maybe_chain {
-            None => {
-                return ret;
+        Call::AfterStep7(edge) => {
+            // Wrap up previous step
+            graph.push(edge);
+            None
+        }
+        Call::AfterStep8(new_match, matching, edge) => {
+            // Step 9: G+(e)
+            let edges = graph.exclude_nodes(&edge);
+            let digraph = graph.as_directed(&new_match);
+            Some((
+                Response::YieldFrom(new_match, digraph),
+                Call::AfterStep9(matching, edge, edges),
+            ))
+        }
+        Call::AfterStep9(matching, edge, edges) => {
+            // wrap up previous step
+            for e in edges {
+                graph.push(e);
             }
-            Some((left, right, left_free)) => {
-                // (left1 -> right -> left2) => (left2 -> right -> left1)
-                let mut new_match = matching.clone();
-                let edge = Edge {
-                    left: left_free,
-                    right: right.idx,
-                };
-                new_match.pop_by_node(&left);
-                new_match.push(edge);
-
-                ret.push(new_match.clone());
-
-                // Step 9: G+(e)
-                {
-                    let edges = graph.exclude_nodes(&edge);
-                    let _ret = _enum_maximum_matchings_iter(
-                        graph,
-                        &new_match,
-                        &graph.as_directed(&new_match),
-                        allowed_start_nodes,
-                    );
-                    ret.extend(_ret);
-                    for e in edges {
-                        graph.push(e);
-                    }
-                };
-
-                // Step 10: G-(e)
-                {
-                    graph.pop(&edge);
-                    let _ret = _enum_maximum_matchings_iter(
-                        graph,
-                        matching,
-                        &graph.as_directed(matching),
-                        allowed_start_nodes,
-                    );
-                    ret.extend(_ret);
-                    graph.push(edge);
-                }
-            }
+            // Step 10: G-(e)
+            graph.pop(&edge);
+            let digraph = graph.as_directed(&matching);
+            Some((
+                Response::YieldFrom(matching, digraph),
+                Call::AfterStep10(edge),
+            ))
+        }
+        Call::AfterStep10(edge) => {
+            graph.push(edge);
+            None
         }
     }
-    ret
+}
+
+#[derive(Debug)]
+enum Call {
+    New(Matching, DirectedGraph),
+    AfterStep5(Matching, Matching, Edge),
+    AfterStep6(Matching, Edge, Vec<Edge>),
+    AfterStep7(Edge),
+    AfterStep8(Matching, Matching, Edge),
+    AfterStep9(Matching, Edge, Vec<Edge>),
+    AfterStep10(Edge),
+}
+
+enum Response {
+    YieldFrom(Matching, DirectedGraph),
+    Return(Matching),
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{enum_maximum_matchings_iter, BipartiteGraph, Node, NodeGroup};
+    use super::{BipartiteGraph, Node, NodeGroup};
     use crate::contains::Contains;
     use rstest::rstest;
     use std::collections::HashSet;
@@ -459,7 +537,11 @@ mod tests {
         let ok_starting_edge = DummySet {};
         let adj = (0..n).map(|_| (0..m).collect()).collect();
         let mut graph = BipartiteGraph::from_adj(adj);
-        let actual = enum_maximum_matchings_iter(&mut graph, &ok_starting_edge).len();
+
+        let actual = graph
+            .iter_match(&ok_starting_edge)
+            .collect::<Vec<_>>()
+            .len();
         let expect = (1..(n + 1)).rev().take(m).product();
         println!("n: {:#?} m: {:#?}", n, m);
         println!("{:#?} {:#?}", actual, expect);
@@ -478,11 +560,13 @@ mod tests {
             }
         }
     }
+
     impl Contains<usize> for MyHashSet {
         fn contains_node(&self, i: &usize) -> bool {
             self.inner.contains(&Node::decode(i, &self.lsize))
         }
     }
+
     impl Contains<Node> for MyHashSet {
         fn contains_node(&self, n: &Node) -> bool {
             self.inner.contains(n)
@@ -504,7 +588,7 @@ mod tests {
         );
 
         let mut graph = BipartiteGraph::from_adj(adj);
-        let solutions = enum_maximum_matchings_iter(&mut graph, &hashset);
+        let solutions = graph.iter_match(&hashset).collect::<Vec<_>>();
         assert_eq!(solutions.len(), 1);
     }
 }
