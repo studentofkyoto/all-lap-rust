@@ -8,7 +8,7 @@ use std::iter::repeat;
 type NodeIndex = usize;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
-enum NodeGroup {
+pub enum NodeGroup {
     Left,
     Right,
 }
@@ -20,7 +20,7 @@ pub struct Node {
 }
 
 impl Node {
-    fn new(lr: NodeGroup, idx: NodeIndex) -> Self {
+    pub fn new(lr: NodeGroup, idx: NodeIndex) -> Self {
         Node { lr, idx }
     }
     fn encode(&self, lsize: usize) -> usize {
@@ -29,7 +29,7 @@ impl Node {
             NodeGroup::Right => self.idx + lsize,
         }
     }
-    fn decode(idx: &usize, lsize: &usize) -> Self {
+    pub fn decode(idx: &usize, lsize: &usize) -> Self {
         if idx < lsize {
             Self::new(NodeGroup::Left, *idx)
         } else {
@@ -38,9 +38,19 @@ impl Node {
     }
 }
 
-struct NodeSet {
+#[derive(Clone)]
+pub struct NodeSet {
     inner: HashSet<Node>,
     lsize: usize,
+}
+
+impl NodeSet {
+    pub fn new(hashset: HashSet<Node>, lsize: usize) -> Self {
+        Self {
+            inner: hashset,
+            lsize,
+        }
+    }
 }
 
 impl Contains<Node> for NodeSet {
@@ -69,7 +79,7 @@ impl Edge {
 
 #[derive(Clone)]
 pub struct Matching {
-    l2r: Vec<Option<NodeIndex>>,
+    pub l2r: Vec<Option<NodeIndex>>,
 }
 
 impl fmt::Debug for Matching {
@@ -87,7 +97,7 @@ impl fmt::Debug for Matching {
 }
 
 impl Matching {
-    fn new(l2r: Vec<Option<NodeIndex>>) -> Self {
+    pub fn new(l2r: Vec<Option<NodeIndex>>) -> Self {
         Self { l2r }
     }
     fn len(&self) -> usize {
@@ -148,6 +158,7 @@ impl Matching {
     }
 }
 
+#[derive(Clone)]
 pub struct BipartiteGraph {
     adj: Vec<Vec<usize>>, // left -> [right]
 }
@@ -258,27 +269,27 @@ impl BipartiteGraph {
         edges_popped
     }
 
-    pub fn iter_match<'a, 'b: 'a>(
-        &'a mut self,
-        allowed_start_nodes: &'b (impl Contains<Node> + Contains<usize>),
-    ) -> impl Iterator<Item = Matching> + 'a {
+    pub fn iter_match(
+        self,
+        allowed_start_nodes: impl Contains<Node> + Contains<usize>,
+    ) -> impl Iterator<Item = Matching> {
         MaximumMatchingsIterator::from_graph(self, allowed_start_nodes)
     }
 }
 
-struct MaximumMatchingsIterator<'a, T> {
-    graph: &'a mut BipartiteGraph,
-    allowed_start_nodes: &'a T,
+pub struct MaximumMatchingsIterator<T> {
+    graph: BipartiteGraph,
+    allowed_start_nodes: T,
     callstack: Vec<Call>,
     is_first_returned: bool, // TODO: remove this thing
 }
 
-impl<'a, T> MaximumMatchingsIterator<'a, T> {
+impl<T> MaximumMatchingsIterator<T> {
     fn new(
-        graph: &'a mut BipartiteGraph,
+        graph: BipartiteGraph,
         matching: Matching,
         digraph: DirectedGraph,
-        allowed_start_nodes: &'a T,
+        allowed_start_nodes: T,
     ) -> Self {
         let callstack = vec![Call::New(matching, digraph)];
         Self {
@@ -289,14 +300,14 @@ impl<'a, T> MaximumMatchingsIterator<'a, T> {
         }
     }
 
-    fn from_graph(graph: &'a mut BipartiteGraph, allowed_start_nodes: &'a T) -> Self {
+    pub fn from_graph(graph: BipartiteGraph, allowed_start_nodes: T) -> Self {
         let matching = graph.find_matching();
         let digraph = graph.as_directed(&matching);
         Self::new(graph, matching, digraph, allowed_start_nodes)
     }
 }
 
-impl<'a, T> Iterator for MaximumMatchingsIterator<'a, T>
+impl<'a, T> Iterator for MaximumMatchingsIterator<T>
 where
     T: Contains<Node> + Contains<usize>,
 {
@@ -315,7 +326,7 @@ where
                     }
                 }
             }
-            let ret = run(&mut self.graph, self.allowed_start_nodes, call);
+            let ret = run(&mut self.graph, &self.allowed_start_nodes, call);
             if ret.is_none() {
                 continue;
             }
@@ -536,12 +547,9 @@ mod tests {
     fn test_completeness(#[case] n: usize, #[case] m: usize) {
         let ok_starting_edge = DummySet {};
         let adj = (0..n).map(|_| (0..m).collect()).collect();
-        let mut graph = BipartiteGraph::from_adj(adj);
+        let graph = BipartiteGraph::from_adj(adj);
 
-        let actual = graph
-            .iter_match(&ok_starting_edge)
-            .collect::<Vec<_>>()
-            .len();
+        let actual = graph.iter_match(ok_starting_edge).collect::<Vec<_>>().len();
         let expect = (1..(n + 1)).rev().take(m).product();
         println!("n: {:#?} m: {:#?}", n, m);
         println!("{:#?} {:#?}", actual, expect);
@@ -587,8 +595,8 @@ mod tests {
             4,
         );
 
-        let mut graph = BipartiteGraph::from_adj(adj);
-        let solutions = graph.iter_match(&hashset).collect::<Vec<_>>();
+        let graph = BipartiteGraph::from_adj(adj);
+        let solutions = graph.iter_match(hashset).collect::<Vec<_>>();
         assert_eq!(solutions.len(), 1);
     }
 }
