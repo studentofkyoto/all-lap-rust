@@ -156,6 +156,13 @@ impl Matching {
     fn find_edge_of_left(&self, left: usize) -> Option<Edge> {
         self.l2r[left].map(|r| Edge::new(left, r))
     }
+
+    pub fn iter_pairs(&'_ self) -> impl Iterator<Item = (NodeIndex, NodeIndex)> + '_ {
+        self.l2r.iter().enumerate().flat_map(|(i, j)| match j {
+            None => None,
+            Some(_j) => (i, *_j).into(),
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -549,7 +556,10 @@ mod tests {
         let adj = (0..n).map(|_| (0..m).collect()).collect();
         let graph = BipartiteGraph::from_adj(adj);
 
-        let actual = graph.iter_match(&ok_starting_edge).collect::<Vec<_>>().len();
+        let actual = graph
+            .iter_match(&ok_starting_edge)
+            .collect::<Vec<_>>()
+            .len();
         let expect = (1..(n + 1)).rev().take(m).product();
         println!("n: {:#?} m: {:#?}", n, m);
         println!("{:#?} {:#?}", actual, expect);
