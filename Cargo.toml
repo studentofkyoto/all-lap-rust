@@ -8,6 +8,5 @@ edition = "2018"
 
 [dependencies]
 itertools = "0.8.2"
-either = "1.6.1"
 hopcroft-karp-rust = { git = "https://github.com/studentofkyoto/hopcroft-karp-rust/", branch = "master" }
 rstest = "0.10.0"

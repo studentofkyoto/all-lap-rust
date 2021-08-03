@@ -198,7 +198,7 @@ impl BipartiteGraph {
         Matching::new(l2r.to_owned())
     }
 
-    fn as_directed(&self, matching: &Matching) -> DirectedGraph {
+    pub fn as_directed(&self, matching: &Matching) -> DirectedGraph {
         let size = self.adj.len();
         let i2js = Self::edges2adj(
             self.adj
@@ -269,27 +269,27 @@ impl BipartiteGraph {
         edges_popped
     }
 
-    pub fn iter_match(
+    pub fn iter_match<'b, 'a: 'b>(
         self,
-        allowed_start_nodes: impl Contains<Node> + Contains<usize>,
-    ) -> impl Iterator<Item = Matching> {
+        allowed_start_nodes: &'a (impl Contains<Node> + Contains<usize>),
+    ) -> impl Iterator<Item = Matching> + 'b {
         MaximumMatchingsIterator::from_graph(self, allowed_start_nodes)
     }
 }
 
-pub struct MaximumMatchingsIterator<T> {
+pub struct MaximumMatchingsIterator<'a, T> {
     graph: BipartiteGraph,
-    allowed_start_nodes: T,
+    allowed_start_nodes: &'a T,
     callstack: Vec<Call>,
     is_first_returned: bool, // TODO: remove this thing
 }
 
-impl<T> MaximumMatchingsIterator<T> {
-    fn new(
+impl<'a, T> MaximumMatchingsIterator<'a, T> {
+    pub fn new<'b: 'a>(
         graph: BipartiteGraph,
         matching: Matching,
         digraph: DirectedGraph,
-        allowed_start_nodes: T,
+        allowed_start_nodes: &'b T,
     ) -> Self {
         let callstack = vec![Call::New(matching, digraph)];
         Self {
@@ -300,14 +300,14 @@ impl<T> MaximumMatchingsIterator<T> {
         }
     }
 
-    pub fn from_graph(graph: BipartiteGraph, allowed_start_nodes: T) -> Self {
+    pub fn from_graph<'b: 'a>(graph: BipartiteGraph, allowed_start_nodes: &'b T) -> Self {
         let matching = graph.find_matching();
         let digraph = graph.as_directed(&matching);
         Self::new(graph, matching, digraph, allowed_start_nodes)
     }
 }
 
-impl<'a, T> Iterator for MaximumMatchingsIterator<T>
+impl<'a, T> Iterator for MaximumMatchingsIterator<'a, T>
 where
     T: Contains<Node> + Contains<usize>,
 {
@@ -326,7 +326,7 @@ where
                     }
                 }
             }
-            let ret = run(&mut self.graph, &self.allowed_start_nodes, call);
+            let ret = run(&mut self.graph, self.allowed_start_nodes, call);
             if ret.is_none() {
                 continue;
             }
@@ -549,7 +549,7 @@ mod tests {
         let adj = (0..n).map(|_| (0..m).collect()).collect();
         let graph = BipartiteGraph::from_adj(adj);
 
-        let actual = graph.iter_match(ok_starting_edge).collect::<Vec<_>>().len();
+        let actual = graph.iter_match(&ok_starting_edge).collect::<Vec<_>>().len();
         let expect = (1..(n + 1)).rev().take(m).product();
         println!("n: {:#?} m: {:#?}", n, m);
         println!("{:#?} {:#?}", actual, expect);
@@ -596,7 +596,7 @@ mod tests {
         );
 
         let graph = BipartiteGraph::from_adj(adj);
-        let solutions = graph.iter_match(hashset).collect::<Vec<_>>();
+        let solutions = graph.iter_match(&hashset).collect::<Vec<_>>();
         assert_eq!(solutions.len(), 1);
     }
 }
