@@ -1,6 +1,6 @@
 [package]
 name = "all-lap-rust"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jaeseung Han <thestudentofkyoto@gmail.com>"]
 edition = "2018"
 
