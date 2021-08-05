@@ -280,7 +280,7 @@ impl BipartiteGraph {
         self,
         allowed_start_nodes: &'_ (impl Contains<Node> + Contains<usize>),
     ) -> impl Iterator<Item = Matching> + '_ {
-        MaximumMatchingCalculator::from_graph(self).into_iter(allowed_start_nodes)
+        MaximumMatchingCalculator::from(self).into_iter(allowed_start_nodes)
     }
 }
 
@@ -288,6 +288,14 @@ pub struct MaximumMatchingCalculator {
     graph: BipartiteGraph,
     callstack: Vec<Call>,
     is_first_returned: bool, // TODO: remove this thing
+}
+
+impl From<BipartiteGraph> for MaximumMatchingCalculator {
+    fn from(graph: BipartiteGraph) -> Self {
+        let matching = graph.find_matching();
+        let digraph = graph.as_directed(&matching);
+        Self::new(graph, matching, digraph)
+    }
 }
 
 impl MaximumMatchingCalculator {
@@ -300,13 +308,7 @@ impl MaximumMatchingCalculator {
         }
     }
 
-    pub fn from_graph(graph: BipartiteGraph) -> Self {
-        let matching = graph.find_matching();
-        let digraph = graph.as_directed(&matching);
-        Self::new(graph, matching, digraph)
-    }
-
-    fn next_item<T>(&mut self, allowed_start_nodes: &T) -> Option<Matching>
+    pub fn next_item<T>(&mut self, allowed_start_nodes: &T) -> Option<Matching>
     where
         T: Contains<Node> + Contains<usize>,
     {
@@ -351,7 +353,7 @@ impl MaximumMatchingCalculator {
     }
 }
 
-struct MaximumMatchingIterator<'a, T> {
+pub struct MaximumMatchingIterator<'a, T> {
     inner: MaximumMatchingCalculator,
     allowed_start_nodes: &'a T,
 }
