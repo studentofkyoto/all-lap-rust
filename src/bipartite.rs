@@ -276,50 +276,42 @@ impl BipartiteGraph {
         edges_popped
     }
 
-    pub fn iter_match<'b, 'a: 'b>(
+    pub fn iter_match(
         self,
-        allowed_start_nodes: &'a (impl Contains<Node> + Contains<usize>),
-    ) -> impl Iterator<Item = Matching> + 'b {
-        MaximumMatchingsIterator::from_graph(self, allowed_start_nodes)
+        allowed_start_nodes: &'_ (impl Contains<Node> + Contains<usize>),
+    ) -> impl Iterator<Item = Matching> + '_ {
+        MaximumMatchingCalculator::from(self).into_iter(allowed_start_nodes)
     }
 }
 
-pub struct MaximumMatchingsIterator<'a, T> {
+pub struct MaximumMatchingCalculator {
     graph: BipartiteGraph,
-    allowed_start_nodes: &'a T,
     callstack: Vec<Call>,
     is_first_returned: bool, // TODO: remove this thing
 }
 
-impl<'a, T> MaximumMatchingsIterator<'a, T> {
-    pub fn new<'b: 'a>(
-        graph: BipartiteGraph,
-        matching: Matching,
-        digraph: DirectedGraph,
-        allowed_start_nodes: &'b T,
-    ) -> Self {
+impl From<BipartiteGraph> for MaximumMatchingCalculator {
+    fn from(graph: BipartiteGraph) -> Self {
+        let matching = graph.find_matching();
+        let digraph = graph.as_directed(&matching);
+        Self::new(graph, matching, digraph)
+    }
+}
+
+impl MaximumMatchingCalculator {
+    pub fn new(graph: BipartiteGraph, matching: Matching, digraph: DirectedGraph) -> Self {
         let callstack = vec![Call::New(matching, digraph)];
         Self {
             graph,
-            allowed_start_nodes,
             callstack,
             is_first_returned: false,
         }
     }
 
-    pub fn from_graph<'b: 'a>(graph: BipartiteGraph, allowed_start_nodes: &'b T) -> Self {
-        let matching = graph.find_matching();
-        let digraph = graph.as_directed(&matching);
-        Self::new(graph, matching, digraph, allowed_start_nodes)
-    }
-}
-
-impl<'a, T> Iterator for MaximumMatchingsIterator<'a, T>
-where
-    T: Contains<Node> + Contains<usize>,
-{
-    type Item = Matching;
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn next_item<T>(&mut self, allowed_start_nodes: &T) -> Option<Matching>
+    where
+        T: Contains<Node> + Contains<usize>,
+    {
         while let Some(call) = self.callstack.pop() {
             if !self.is_first_returned {
                 match call {
@@ -333,7 +325,7 @@ where
                     }
                 }
             }
-            let ret = run(&mut self.graph, self.allowed_start_nodes, call);
+            let ret = run(&mut self.graph, allowed_start_nodes, call);
             if ret.is_none() {
                 continue;
             }
@@ -348,6 +340,31 @@ where
             }
         }
         None
+    }
+
+    pub fn into_iter<T>(self, allowed_start_nodes: &'_ T) -> impl Iterator<Item = Matching> + '_
+    where
+        T: Contains<Node> + Contains<usize>,
+    {
+        MaximumMatchingIterator {
+            inner: self,
+            allowed_start_nodes,
+        }
+    }
+}
+
+pub struct MaximumMatchingIterator<'a, T> {
+    inner: MaximumMatchingCalculator,
+    allowed_start_nodes: &'a T,
+}
+
+impl<'a, T> Iterator for MaximumMatchingIterator<'a, T>
+where
+    T: Contains<Node> + Contains<usize>,
+{
+    type Item = Matching;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next_item(self.allowed_start_nodes)
     }
 }
 
